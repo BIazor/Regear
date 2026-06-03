@@ -1,0 +1,1 @@
+ALTER TABLE builds ADD COLUMN screenshot_url TEXT NOT NULL DEFAULT '';
