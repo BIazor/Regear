@@ -764,7 +764,7 @@ func (s *Store) GenerateShoppingList(actor User) (ShoppingList, error) {
 		FROM regear_request_items rri
 		JOIN regear_requests rr ON rr.id = rri.regear_request_id
 		WHERE rr.status = 'Approved' AND quantity_missing > 0
-		GROUP BY item_name, equivalent_tier
+		GROUP BY item_name, (tier + enchantment)
 		ORDER BY SUM(quantity_missing) DESC, item_name`)
 	if err != nil {
 		return ShoppingList{}, err
@@ -868,7 +868,7 @@ func (s *Store) mostRequested() ([]ShoppingListItem, error) {
 	rows, err := s.db.Query(`
 		SELECT bi.item_name, (bi.tier + bi.enchantment) AS equivalent_tier, COUNT(*)
 		FROM regear_requests rr JOIN build_items bi ON bi.build_id = rr.build_id
-		GROUP BY bi.item_name, equivalent_tier
+		GROUP BY bi.item_name, (bi.tier + bi.enchantment)
 		ORDER BY COUNT(*) DESC, bi.item_name LIMIT 8`)
 	if err != nil {
 		return nil, err
@@ -914,7 +914,7 @@ func (s *Store) MemberHistory() ([]MemberHistory, error) {
 		FROM users u
 		JOIN guild_roles r ON r.id = u.role_id
 		LEFT JOIN regear_requests rr ON rr.user_id = u.id
-		GROUP BY u.id, u.player_name, r.name
+		GROUP BY u.id, u.player_name, r.id, r.name
 		ORDER BY r.id DESC, u.player_name`)
 	if err != nil {
 		return nil, err
