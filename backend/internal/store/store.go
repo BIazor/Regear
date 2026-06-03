@@ -581,31 +581,42 @@ func fulfillBuildItems(tx queryable, regearID, buildID int64) error {
 	}
 	defer rows.Close()
 
+	type buildItem struct {
+		name       string
+		tier, ench int
+		needed     int
+	}
+	var items []buildItem
+
 	for rows.Next() {
-		var name string
-		var tier, ench, needed int
-		if err := rows.Scan(&name, &tier, &ench, &needed); err != nil {
+		var item buildItem
+		if err := rows.Scan(&item.name, &item.tier, &item.ench, &item.needed); err != nil {
 			return err
 		}
+		items = append(items, item)
+	}
+	rows.Close()
+
+	for _, item := range items {
 		var available int
-		err := tx.QueryRow(`SELECT quantity_available FROM inventory WHERE item_name = ? AND equivalent_tier = ?`, name, tier+ench).Scan(&available)
+		err := tx.QueryRow(`SELECT quantity_available FROM inventory WHERE item_name = ? AND equivalent_tier = ?`, item.name, item.tier+item.ench).Scan(&available)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		fulfilled := min(available, needed)
-		missing := needed - fulfilled
+		fulfilled := min(available, item.needed)
+		missing := item.needed - fulfilled
 		if fulfilled > 0 {
-			if _, err := tx.Exec(`UPDATE inventory SET quantity_available = quantity_available - ?, last_updated = CURRENT_TIMESTAMP WHERE item_name = ? AND equivalent_tier = ?`, fulfilled, name, tier+ench); err != nil {
+			if _, err := tx.Exec(`UPDATE inventory SET quantity_available = quantity_available - ?, last_updated = CURRENT_TIMESTAMP WHERE item_name = ? AND equivalent_tier = ?`, fulfilled, item.name, item.tier+item.ench); err != nil {
 				return err
 			}
 		}
 		if _, err := tx.Exec(`
 			INSERT INTO regear_request_items (regear_request_id, item_name, tier, enchantment, quantity_needed, quantity_fulfilled, quantity_missing)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`, regearID, name, tier, ench, needed, fulfilled, missing); err != nil {
+			VALUES (?, ?, ?, ?, ?, ?, ?)`, regearID, item.name, item.tier, item.ench, item.needed, fulfilled, missing); err != nil {
 			return err
 		}
 	}
-	return rows.Err()
+	return nil
 }
 
 func deductMissingItems(tx queryable, regearID int64) error {
@@ -770,19 +781,24 @@ func (s *Store) GenerateShoppingList(actor User) (ShoppingList, error) {
 		return ShoppingList{}, err
 	}
 	defer rows.Close()
+
+	var items []ShoppingListItem
 	for rows.Next() {
 		var item ShoppingListItem
 		if err := rows.Scan(&item.ItemName, &item.EquivalentTier, &item.QuantityNeeded); err != nil {
 			return ShoppingList{}, err
 		}
+		items = append(items, item)
+	}
+	rows.Close()
+
+	for _, item := range items {
 		if _, err := tx.Exec(`INSERT INTO shopping_list_items (shopping_list_id, item_name, equivalent_tier, quantity_needed) VALUES (?, ?, ?, ?)`,
 			id, item.ItemName, item.EquivalentTier, item.QuantityNeeded); err != nil {
 			return ShoppingList{}, err
 		}
 	}
-	if err := rows.Err(); err != nil {
-		return ShoppingList{}, err
-	}
+
 	if err := tx.Commit(); err != nil {
 		return ShoppingList{}, err
 	}
