@@ -675,8 +675,8 @@ function Regears({ builds, regears, canManage, client, refresh, user }: {
                     <RegearPreviews deathScreenshotUrl={r.deathScreenshotUrl} vodUrl={r.vodUrl} />
                   </div>
                   <div className="requestControls">
-                    <StatusBadge value={r.status} />
-                    {r.pickupLocation && (() => {
+                    <StatusBadge value={r.status === 'Approved' && !isPickupLocationSet(r.pickupLocation) ? 'Approved - Waiting for Location' : r.status} />
+                    {isPickupLocationSet(r.pickupLocation) && (() => {
                       const { column, row } = parsePickupLocation(r.pickupLocation);
                       return (
                         <div className="pickupLocationBox">
@@ -694,7 +694,7 @@ function Regears({ builds, regears, canManage, client, refresh, user }: {
                         </div>
                       );
                     })()}
-                    {r.status === 'Approved' && (
+                    {r.status === 'Approved' && isPickupLocationSet(r.pickupLocation) && (
                       <button
                         className="claimButton"
                         onClick={() => status(r.id, 'Completed')}
@@ -1323,7 +1323,8 @@ function BarList({ items }: { items: { label: string; value: number }[] }) {
 }
 
 function StatusBadge({ value }: { value: string }) {
-  return <span className={`badge ${value.toLowerCase()}`}>{value}</span>;
+  const baseClass = value.split(' ')[0].toLowerCase();
+  return <span className={`badge ${baseClass}`}>{value}</span>;
 }
 
 function makeClient(setError: (message: string) => void) {
