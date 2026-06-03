@@ -221,27 +221,60 @@ func migratePostgres(db *sql.DB) error {
 		return err
 	}
 
-	var count int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version = 'postgres_init'`).Scan(&count); err != nil {
+	// 1. Initial schema migration
+	var initCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version = 'postgres_init'`).Scan(&initCount); err != nil {
 		return err
 	}
-	if count > 0 {
-		return nil
+	if initCount == 0 {
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
+
+		if _, err := tx.Exec(postgresSchema); err != nil {
+			return fmt.Errorf("postgres_init migration failed: %w", err)
+		}
+
+		if _, err := tx.Exec(`INSERT INTO schema_migrations (version) VALUES ('postgres_init')`); err != nil {
+			return err
+		}
+
+		if err := tx.Commit(); err != nil {
+			return err
+		}
 	}
 
-	tx, err := db.Begin()
-	if err != nil {
+	// 2. Widen columns migration (to fix the VARCHAR(512) -> TEXT issue for existing tables)
+	var widenCount int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version = 'postgres_widen_columns'`).Scan(&widenCount); err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	if widenCount == 0 {
+		tx, err := db.Begin()
+		if err != nil {
+			return err
+		}
+		defer tx.Rollback()
 
-	if _, err := tx.Exec(postgresSchema); err != nil {
-		return fmt.Errorf("postgres_init migration failed: %w", err)
+		alterSQL := `
+			ALTER TABLE builds ALTER COLUMN screenshot_url TYPE TEXT;
+			ALTER TABLE regear_requests ALTER COLUMN death_screenshot_url TYPE TEXT;
+			ALTER TABLE regear_requests ALTER COLUMN vod_url TYPE TEXT;
+		`
+		if _, err := tx.Exec(alterSQL); err != nil {
+			return fmt.Errorf("postgres_widen_columns migration failed: %w", err)
+		}
+
+		if _, err := tx.Exec(`INSERT INTO schema_migrations (version) VALUES ('postgres_widen_columns')`); err != nil {
+			return err
+		}
+
+		if err := tx.Commit(); err != nil {
+			return err
+		}
 	}
 
-	if _, err := tx.Exec(`INSERT INTO schema_migrations (version) VALUES ('postgres_init')`); err != nil {
-		return err
-	}
-
-	return tx.Commit()
+	return nil
 }
